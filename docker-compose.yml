@@ -1,0 +1,102 @@
+version: '3.8'
+
+services:
+  golem-db:
+    image: golemfactory/golem:latest
+    container_name: beacon_golem_db
+    ports:
+      - "7465:7465"
+      - "9090:9090"
+    environment:
+      - GOLEM_NODE_NAME=beacon-explorer
+      - GOLEM_SUBNET=public
+    volumes:
+      - golem_data:/golem/.local/share/golem
+      - ./golem-config:/golem/config
+    restart: unless-stopped
+    networks:
+      - beacon-network
+
+  ingestor:
+    image: moonplkr/beacon-explorer:ingestor-latest
+    build:
+      context: ./services/ingestor
+      dockerfile: Dockerfile
+    container_name: beacon_ingestor
+    environment:
+      - BEACON_NODE_URL=${BEACON_NODE_URL}
+      - GOLEM_DB_URL=${GOLEM_DB_URL}
+      - POLL_INTERVAL=${POLL_INTERVAL}
+      - NODE_ENV=${NODE_ENV}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - DB_PORT=${DB_PORT}
+    depends_on:
+      - golem-db
+    restart: unless-stopped
+    networks:
+      - beacon-network
+
+  api:
+    image: moonplkr/beacon-explorer:api-latest
+    build:
+      context: ./services/api
+      dockerfile: Dockerfile
+    container_name: beacon_api
+    ports:
+      - "3001:3001"
+    environment:
+      - GOLEM_DB_URL=${GOLEM_DB_URL}
+      - NODE_ENV=${NODE_ENV}
+      - RATE_LIMIT_WINDOW=${RATE_LIMIT_WINDOW}
+      - RATE_LIMIT_MAX=${RATE_LIMIT_MAX}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - DB_PORT=${DB_PORT}
+    depends_on:
+      - golem-db
+    restart: unless-stopped
+    networks:
+      - beacon-network
+
+  web:
+    image: moonplkr/beacon-explorer:web-latest
+    build:
+      context: ./services/web
+      dockerfile: Dockerfile
+    container_name: beacon_web
+    ports:
+      - "3000:3000"
+    environment:
+      - API_BASE_URL=${API_BASE_URL}
+      - NODE_ENV=${NODE_ENV}
+    depends_on:
+      - api
+    restart: unless-stopped
+    networks:
+      - beacon-network
+
+  nginx:
+    image: nginx:alpine
+    container_name: beacon_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+    depends_on:
+      - web
+      - api
+    restart: unless-stopped
+    networks:
+      - beacon-network
+
+volumes:
+  golem_data:
+
+networks:
+  beacon-network:
+    driver: bridge

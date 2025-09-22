@@ -1,0 +1,23 @@
+{
+  "name": "beacon-chain-explorer",
+  "version": "1.0.0",
+  "description": "Beacon Chain Explorer on Golem DB",
+  "main": "index.js",
+  "scripts": {
+    "build": "docker compose build --no-cache",
+    "up": "docker compose up -d",
+    "down": "docker compose down",
+    "logs": "docker compose logs -f",
+    "restart": "docker compose restart",
+    "build-push": "docker buildx bake --push",
+    "dev": "docker compose up --build",
+    "setup-buildx": "docker buildx create --use --name beacon-builder",
+    "push": "docker compose push"
+  },
+  "author": "moonplkr",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}

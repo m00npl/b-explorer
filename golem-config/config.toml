@@ -1,0 +1,21 @@
+[database]
+host = "0.0.0.0"
+port = 7465
+max_connections = 100
+
+[network]
+subnet = "public"
+node_name = "beacon-explorer"
+
+[storage]
+data_retention_months = 6
+auto_cleanup = true
+
+[rpc]
+enabled = true
+port = 9090
+cors_allowed_origins = ["*"]
+
+[logging]
+level = "info"
+format = "json"
