@@ -93,8 +93,6 @@ tmp/
 temp/
 
 # Editor directories and files
-.vscode/
-.idea/
 .DS_Store
 *.suo
 *.ntvs*

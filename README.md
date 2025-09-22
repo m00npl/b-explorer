@@ -1,23 +1,24 @@
-# Beacon Chain Explorer on Golem DB
+# Beacon Chain Explorer
 
-A real-time Ethereum beacon chain explorer that continuously ingests beacon chain data into a Golem DB and provides free access via dashboards, API, and Golem DB RPC.
+A real-time Ethereum beacon chain explorer that continuously ingests beacon chain data and provides free access via interactive dashboards and REST API. Features rotational validator fetching system that systematically processes 2M+ validators over 3.5-hour cycles.
 
 ## Features
 
-- **Real-time Data Ingestion**: Continuously polls beacon chain data and stores in Golem DB
-- **Web Explorer**: Interactive UI for exploring slots, validators, and epochs
-- **REST API**: JSON API with rate limiting for developers
-- **Validator Search**: Search validators by index or public key
-- **Performance Tracking**: Validator effectiveness and performance metrics
-- **Data Retention**: 6-month BTL window with automatic cleanup
+- **Real-time Data Ingestion**: Continuously polls beacon chain data with 60-second intervals
+- **Rotational Validator System**: Fetches 10,000 validators per cycle, completing full rotation in ~3.5 hours
+- **Web Explorer**: Interactive UI for exploring slots, validators, and epochs with responsive design
+- **REST API**: JSON API with rate limiting (100 req/15min) for developers
+- **Validator Search**: Search validators by index or public key prefix
+- **Performance Tracking**: Validator effectiveness and performance metrics (planned)
+- **Data Retention**: 6-month TTL window with automatic cleanup
 
 ## Architecture
 
-- **Ingestor Service**: Polls beacon node API and ingests data into Golem DB
-- **API Service**: REST API with rate limiting and validation
-- **Web Service**: Next.js frontend with real-time updates
-- **Nginx**: Reverse proxy and load balancer
-- **Golem DB**: Distributed database for beacon chain data
+- **Ingestor Service**: TypeScript service that polls Lighthouse beacon node API with rotational validator fetching
+- **API Service**: Express.js REST API with PostgreSQL database, rate limiting and trust proxy configuration
+- **Web Service**: Next.js frontend with TypeScript, TailwindCSS, and responsive design
+- **PostgreSQL Database**: Stores beacon chain data with 6-month TTL and automatic cleanup
+- **Docker**: Multi-platform containerization (linux/amd64) with buildx support
 
 ## Quick Start
 
@@ -25,33 +26,43 @@ A real-time Ethereum beacon chain explorer that continuously ingests beacon chai
 
 - Docker and Docker Compose
 - Bun (preferred) or Node.js
+- Access to a Lighthouse beacon node (or other Ethereum consensus client)
 
 ### Development
 
 ```bash
-# Clone and setup
-git clone <repository>
-cd beacon
+# Clone repository
+git clone https://github.com/m00npl/b-explorer.git
+cd b-explorer
 
-# Copy environment variables
+# Copy and configure environment variables
 cp .env.example .env
+# Edit .env with your beacon node URL and database credentials
 
-# Start services
-bun run dev
-```
-
-### Production
-
-```bash
-# Build and deploy
-bun run build
-bun run up
+# Start services with Docker Compose
+docker compose up -d
 
 # View logs
-bun run logs
+docker compose logs -f
+```
 
-# Stop services
-bun run down
+### Production Deployment
+
+```bash
+# Clone on server
+git clone https://github.com/m00npl/b-explorer.git
+cd b-explorer
+
+# Configure environment
+cp .env.example .env
+# Edit .env with production values
+
+# Build and deploy with buildx
+docker buildx bake --push
+docker compose up -d
+
+# Monitor logs
+docker compose logs -f ingestor
 ```
 
 ## API Endpoints
@@ -88,78 +99,130 @@ bun run down
 
 ## Deployment
 
-### Docker Hub
+### Docker Hub Images
 
-Images are available on Docker Hub under `moonplkr/beacon-explorer`:
+Pre-built multi-platform images are available:
 
 - `moonplkr/beacon-explorer:ingestor-latest`
 - `moonplkr/beacon-explorer:api-latest`
 - `moonplkr/beacon-explorer:web-latest`
 
-### Build and Push
+### Building Images
 
 ```bash
-# Build all services
-bun run build
+# Build all services for multiple platforms
+docker buildx bake
 
-# Push to Docker Hub
-bun run build-push
+# Build and push to Docker Hub
+docker buildx bake --push
 ```
 
 ### Server Deployment
 
-```bash
-# On server (ubuntu@moon.dev.golem.network)
-git pull
-docker compose pull
-docker compose up -d --build
-```
+1. **Set up environment**:
+   ```bash
+   cp .env.example .env
+   # Configure BEACON_NODE_URL, database credentials, and API_BASE_URL
+   ```
 
-## Configuration
+2. **Deploy services**:
+   ```bash
+   docker compose up -d
+   ```
 
-### Environment Variables
+3. **Configure reverse proxy** (nginx proxy manager):
+   - Point domain to API service (port 3001) for `/api/*` routes
+   - Point domain to Web service (port 3000) for all other routes
 
-See `.env.example` for all available configuration options.
+### Environment Configuration
 
-### Beacon Node
+Key environment variables:
 
-The ingestor connects to a beacon node API. Configure `BEACON_NODE_URL` to point to your preferred endpoint.
+- `BEACON_NODE_URL`: Your Lighthouse beacon node endpoint (e.g., `http://65.21.215.154:5052`)
+- `DB_USERNAME`, `DB_PASSWORD`: PostgreSQL credentials
+- `API_BASE_URL`: Public API URL for web frontend (e.g., `https://your-domain.com`)
+- `POLL_INTERVAL`: Data ingestion interval in milliseconds (default: 60000)
 
-### Golem DB
+## Technical Details
 
-Ensure Golem DB is running and accessible at `GOLEM_DB_URL`.
+### Rotational Validator System
+
+The ingestor implements a sophisticated rotational system for handling 2M+ validators:
+
+- Fetches 10,000 validators per 60-second cycle
+- Cycles through entire validator set over ~3.5 hours (210 cycles)
+- Automatically handles Ethereum's large exit_epoch values (converts to NULL for PostgreSQL compatibility)
+- Processes validators in batches of 100 to optimize API calls
+
+### Database Schema
+
+PostgreSQL tables with 6-month TTL:
+- `slots`: Block information with proposer and attestation data
+- `validators`: Complete validator data with effectiveness ratings
+- `epochs`: Epoch summaries with finality information
+- `attestations`: Individual attestation records
+- Automatic cleanup via `cleanup_expired_data()` function
+
+### Rate Limiting
+
+API implements rate limiting with trust proxy support:
+- 100 requests per 15-minute window per IP
+- Configurable via `RATE_LIMIT_WINDOW` and `RATE_LIMIT_MAX`
+- Proper handling of proxy headers (X-Forwarded-For)
 
 ## Development
 
 ### Project Structure
 
 ```
-beacon/
+b-explorer/
 ├── services/
-│   ├── ingestor/     # Beacon data ingestor
-│   ├── api/          # REST API service
-│   └── web/          # Next.js frontend
-├── nginx/            # Nginx configuration
-├── golem-config/     # Golem DB configuration
-└── docker-compose.yml
+│   ├── ingestor/          # TypeScript beacon data ingestor
+│   │   ├── src/
+│   │   │   ├── beacon/    # Lighthouse API client
+│   │   │   ├── database/  # PostgreSQL client
+│   │   │   └── types/     # TypeScript interfaces
+│   │   └── Dockerfile
+│   ├── api/               # Express.js REST API
+│   │   ├── src/
+│   │   │   ├── routes/    # API endpoints
+│   │   │   ├── database/  # Database client
+│   │   │   └── middleware/# Rate limiting, error handling
+│   │   └── Dockerfile
+│   └── web/               # Next.js frontend
+│       ├── src/
+│       │   ├── pages/     # React pages with dynamic routing
+│       │   ├── components/# Reusable UI components
+│       │   └── hooks/     # Custom React hooks
+│       └── Dockerfile
+├── docker-compose.yml     # Service orchestration
+├── docker-bake.hcl       # Multi-platform build configuration
+├── init-schema.sql       # PostgreSQL database schema
+├── .env.example          # Environment variables template
+└── README.md
+```
+
+### Local Development
+
+```bash
+# Install dependencies (each service)
+cd services/ingestor && bun install
+cd services/api && bun install
+cd services/web && bun install
+
+# Run individual services
+cd services/ingestor && bun run dev
+cd services/api && bun run dev
+cd services/web && bun run dev
 ```
 
 ### Adding Features
 
-1. Update database schema in `init-schema.sql`
-2. Modify ingestor to collect new data
-3. Add API endpoints for new data
-4. Update web UI components
-
-### Testing
-
-```bash
-# Run type checking
-bun run type-check
-
-# Run linting
-bun run lint
-```
+1. **Database changes**: Update `init-schema.sql` with new tables/columns
+2. **Data ingestion**: Modify `services/ingestor/src/ingestor.ts` and API client
+3. **API endpoints**: Add routes in `services/api/src/routes/`
+4. **Frontend**: Create pages in `services/web/src/pages/` and components
+5. **Types**: Update TypeScript interfaces in `src/types/` directories
 
 ## License
 
